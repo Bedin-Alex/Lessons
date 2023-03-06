@@ -4,27 +4,33 @@ menu(){
 echo "1 - Installation of packages
 2 - Getting of GPG
 3 - Installation of repositories
-4 - Installation of Docker and features"
-read chose
+4 - Installation of Docker and features
+5 - Grant privileges to user"
+read choice
 
-if [[ $chose == "1" ]];
+if [[ $choice == "1" ]];
 then
  step_1
 fi
 
-if [[ $chose == "2" ]];
+if [[ $choice == "2" ]];
 then
  step_2
 fi
 
-if [[ $chose == "3" ]];
+if [[ $choice == "3" ]];
 then
  step_3
 fi
 
-if [[ $chose == "4" ]];
+if [[ $choice == "4" ]];
 then
  step_4
+fi
+
+if [[ $choice == "5" ]];
+then
+ step_5
 fi
 }
 
@@ -57,6 +63,14 @@ step_4(){
  echo "Step 4. Installing docker + features"
  sudo apt-get update -y
  sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+}
+
+step_5(){
+ echo "Will be given privileges to current user"
+ sudo groupadd docker
+ sudo usermod -aG docker $USER
+ newgrp docker
+ docker ps
 }
 
 menu
