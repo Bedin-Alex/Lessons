@@ -10,6 +10,14 @@ fi
 
 check_root=0
 
+docker_compose_file=$(docker inspect ${image} | grep "com.docker.compose.project.config_files" | cut -d ':' -f 2 | sed "s/\"//g" | sed "s/,//")
+
+if [[ $docker_compose_file != "" ]];then
+    echo -e "\ncheck docker compose file: ${CYAN}${docker_compose_file}${NC}"
+    cat $docker_compose_file
+    exit 0
+fi
+
 if [[ ! (-f /usr/bin/jq) ]];then
     status="Error"
 fi
@@ -32,8 +40,10 @@ if [[ $docker_compose_file != "" ]]; then
     exit 0
 fi
 
-docker_name=$(echo $docker_inspect_file | jq .[].Name -r)
+docker_service=$(echo $docker_inspect_file | jq ".[].Config.Labels.\"com.docker.compose.service\"" -r)
+docker_name=$(echo $docker_inspect_file | jq .[].Name -r | sed 's|/||')
 docker_hostname=$(echo $docker_inspect_file | jq .[].Config.Hostname -r)
+docker_image=$(echo $docker_inspect_file | jq ".[].Config.Image" -r)
 
 # ENV
 arr_env=()
@@ -46,7 +56,7 @@ done
 arr_cmd=()
 line_cmd=$(echo $docker_inspect_file | jq .[].Config.Cmd | sed "s/\[//" | sed "s/\]//" | sed "s/^  //g" | sed "s/\"//g" | sed "s/,//" | sed "s/;//g")
 for line in $line_cmd; do
-    arr_cmd+=("            - $line\n")
+    arr_cmd+=("            $line\n")
 done
 
 # ENTRYPOINT
@@ -57,36 +67,56 @@ for line in $e_points; do
 done
 
 # PORTS
-ports_array=()
+arr_ports=()
 
-(echo $docker_inspect_file | jq '.[].HostConfig.PortBindings' | jq "keys | .[]" -r) || status=2
-
+(echo $docker_inspect_file | jq '.[].HostConfig.PortBindings' | jq "keys | .[]" -r > /dev/null) || status=2
+parent_ports=$(echo $docker_inspect_file | jq '.[].HostConfig.PortBindings' | jq "keys | .[]" -r)
+ports_length=$(echo $parent_ports | wc -l)
 if [[ $status != 2 ]];then
-    parent_port=$(echo $docker_inspect_file | jq '.[].HostConfig.PortBindings' | jq "keys | .[]" -r)
-    for pport in $parent_port; do
-        host_ip=$(echo $docker_inspect_file | jq ".[].HostConfig.PortBindings" | jq ".[\"$pport\"][] | .HostIp" -r) 
-        if [[ $host_ip == "" ]]; then
-            host_ip="0.0.0.0"
-        fi
-        host_port=$(echo $docker_inspect_file | jq ".[].HostConfig.PortBindings" | jq ".[\"$pport\"][] | .HostPort" -r)
-        ports_array+=("            - ${host_ip}:${host_port}:${parent_port}\n")
+    for parent_port in $parent_ports; do
+        for pport in $parent_port; do
+            host_ip=$(echo $docker_inspect_file | jq ".[].HostConfig.PortBindings" | jq ".[\"$pport\"][] | .HostIp" -r) 
+            if [[ $host_ip == "" ]]; then
+                host_ip="0.0.0.0"
+            fi
+            host_port=$(echo $docker_inspect_file | jq ".[].HostConfig.PortBindings" | jq ".[\"$pport\"][] | .HostPort" -r)
+            arr_ports+=("            - ${host_ip}:${host_port}:${parent_port}\n")
+        done
     done
 else
-    ports_array=('""')
+    arr_ports=('""')
 fi
+
+# RESTART POLICY
+restart_policy=$(echo $docker_inspect_file | jq ".[].HostConfig.RestartPolicy.Name" -r)
+[[ $restart_policy == "" ]] && restart_policy="\"nos\""
+
+# VOLUMES
+i=0
+volume_length=$(echo $docker_inspect_file | jq '.[].Mounts[].Type' | wc -l)
+arr_volumes=()
+while [[ $i -lt $volume_length ]]; do
+    volume_src=$(echo $docker_inspect_file | jq ".[].Mounts[${i}].Source" -r)
+    volume_dst=$(echo $docker_inspect_file | jq ".[].Mounts[${i}].Destination" -r)
+    volume_dst_mode=$(echo $docker_inspect_file | jq ".[].Mounts[${i}].Mode" -r)
+    arr_volumes+=("            - ${volume_src}:${volume_dst}:${volume_dst_mode}\n")
+    let i=i+1
+done
 
 function composer(){
     echo -e """
 version: '3'
 services:
-    test:
+    ${docker_service}:
+        image: ${docker_image}
         container_name: "$docker_name"
         hostname: "$docker_hostname"
-        command:\n ${arr_cmd[@]}
+        restart: ${restart_policy}
+        command: >\n ${arr_cmd[@]}
         entrypoint:\n ${arr_entry[@]}
-        ports:\n ${ports_array}
+        ports:\n ${arr_ports[@]}
         environment:\n ${arr_env[@]}
-
-    """ > temp-compose.yaml
+        volumes:\n ${arr_volumes[@]}
+    """  > temp-compose.yaml
 }
 composer 
