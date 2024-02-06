@@ -23,5 +23,5 @@ sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plu
 echo "Will be given privileges to current user"
 sudo groupadd docker
 sudo usermod -aG docker $USER
-newgrp docker
+#newgrp docker
 docker ps
