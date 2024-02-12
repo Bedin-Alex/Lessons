@@ -1,0 +1,43 @@
+version: '3.9'
+services:
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:latest
+    container_name: Wireguard
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/London
+      - PEERS=mobile
+    volumes:
+      - ./wireguard:/config
+      - /lib/modules:/lib/modules
+      - /usr/src:/usr/src
+    ports:
+      - 51820:51820/udp
+    sysctls:
+        - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+    healthcheck:
+        test: ["CMD", "ls", "-l", "/config/peer_mobile"]
+        interval: 5s
+        timeout: 2s
+        retries: 5
+
+  checker:
+    image: alex778/qrcode:1.1
+    container_name: checker
+    depends_on:
+      wireguard:
+        condition: service_healthy
+    links: 
+        - wireguard
+    volumes:
+      - ./test/run.sh:/run.sh:ro
+      - ./wireguard:/config
+    env_file:
+      - .env
+    command: /run.sh mobile
