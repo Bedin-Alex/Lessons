@@ -36,7 +36,7 @@ services:
     links: 
         - wireguard
     volumes:
-      - ./test/run.sh:/run.sh:ro
+      - ./helper.sh:/run.sh:ro
       - ./wireguard:/config
     env_file:
       - .env
